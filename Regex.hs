@@ -1,5 +1,6 @@
 module Regex (
-  Regex,
+  Regex(..),
+  Range(..),
   compile,
   match
 ) where
@@ -22,6 +23,7 @@ data Regex
   | RStar Regex
   | RQMark Regex
   | RGroup Regex
+  | RIndexedGroup Int Regex
   | RAlter [Regex]
   | RReplicate Int (Maybe Int) Regex
   | REnd
@@ -41,6 +43,7 @@ instance Show Regex where
   show (RStar r) = show r ++ "*"
   show (RQMark r) = show r ++ "?"
   show (RGroup r) = "(" ++ show r ++ ")"
+  show (RIndexedGroup _ r) = "(" ++ show r ++ ")"
   show (RAlter rs) = intercalate "|" (map show rs)
   show (RReplicate f Nothing r) = show r ++ "{" ++ show f ++ "}"
   show (RReplicate f (Just t) r) = show r ++ "{" ++ show f ++ "," ++
@@ -132,7 +135,7 @@ toParser (RQMark r) = toParser r `orElse` return []
 toParser (RGroup r) = toParser r
 toParser (RAlter rs) = choice (map toParser rs)
 toParser (RReplicate f mbTo r) = concat <$>
-  choice (map (flip replicateM (toParser r)) [f..t])
+  choice (map (flip replicateM (toParser r)) (reverse [f..t]))
   where
     t = maybe f id mbTo
 

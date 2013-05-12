@@ -1,6 +1,7 @@
 import System.Environment
 
 import Regex
+import RegexGroup
 
 main = do
   args <- getArgs
