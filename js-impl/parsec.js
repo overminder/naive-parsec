@@ -26,26 +26,29 @@ const Unit = new UnitType()
 /**
  * Just a computation-efficient way to treat a string as a list.
  */
-function StringSlice(xs, opt_ix) {
-  this.xs = xs
-  this.ix = opt_ix || 0
-}
+class StringSlice {
+  constructor(xs, opt_ix) {
+    this.xs = xs
+    this.ix = opt_ix || 0
+  }
 
-StringSlice.prototype.head = function() {
-  if (this.xs.length > this.ix) {
-    return this.xs[this.ix]
-  } else {
-    return None
+  head() {
+    if (this.xs.length > this.ix) {
+      return this.xs[this.ix]
+    } else {
+      return None
+    }
+  }
+
+  tail() {
+    if (this.xs.length > this.ix) {
+      return new StringSlice(this.xs, this.ix + 1)
+    } else {
+      return None
+    }
   }
 }
 
-StringSlice.prototype.tail = function() {
-  if (this.xs.length > this.ix) {
-    return new StringSlice(this.xs, this.ix + 1)
-  } else {
-    return None
-  }
-}
 
 // Monadic parsers
 
@@ -189,18 +192,23 @@ export function parse(p, xs) {
 const pUrl = (() => {
   let pScheme = joinCharsM(many1(letter))
   let pChar = orElse(letter, orElse(digit, oneOf('.-_')))
-  let pChars = joinCharsM(many1(pChar))
+  let pChars1 = joinCharsM(many1(pChar))
+  let pChars = joinCharsM(many(pChar))
   let pPathSeg = ignoreFirst(char('/'), joinCharsM(many1(pChar)))
-  let pQuery = andThen(pChars, ignoreFirst(char('='), pChars))
+  let pQuery = andThen(pChars1, orElse(ignoreFirst(char('='), pChars1), pure(null)))
   let pQueries = sepBy(pQuery, char('&'))
+  let pInt = fmap(Number, joinCharsM(many1(digit)))
+  let pTagBodyOr = (tag, body, orValue) => orElse(ignoreFirst(string(tag), body), pure(orValue))
 
   // XXX: This relies on the fact that modern JS engines preserve the key
   // insertion order. combineNamed(named(..)..) is safer in this regard.
   return sequentiallyNamed({
     scheme: pScheme,
-    hostname: ignoreFirst(string('://'), pChars),
+    hostname: pTagBodyOr('://', pChars),
+    port: pTagBodyOr(':', pInt),
     pathSegs: many(pPathSeg),
-    queries: orElse(ignoreFirst(char('?'), pQueries), pure([]))
+    queries: pTagBodyOr('?', pQueries, []),
+    hashQueries: pTagBodyOr('#', pQueries, []),
   })
 })()
 
@@ -210,13 +218,16 @@ const pB = char('b')
 const pC = char('c')
 const pAB = andThen(pA, pB)
 const pAC = andThen(pA, pC)
-console.log(parse(pUrl, 'http://www.google.com/foo/bar/baz/index.html?a=5&b=3'))
+console.log(parse(pUrl, 'http://www.google.com:80/foo/bar/baz/index.html?a=5&b=3&dothis#qq=666&dekai&ck'))
+console.log(parse(pUrl, 'file:///foo/bar/baz/index.html?a=5&b=3&dothis#qq=666&dekai&ck'))
 /*
 $ node parsec-compiled.js
 { scheme: 'http',
   hostname: 'www.google.com',
+  port: 80,
   pathSegs: [ 'foo', 'bar', 'baz', 'index.html' ],
-  queries: [ [ 'a', '5' ], [ 'b', '3' ] ] }
+  queries: [ [ 'a', '5' ], [ 'b', '3' ], [ 'dothis', null ] ],
+  hashQueries: [ [ 'qq', '666' ], [ 'dekai', null ], [ 'ck', null ] ] }
  */
 
 //console.log(parse(andThen(named('a', many1(pA)), named('b', many1(pB))), 'aabbb'))
