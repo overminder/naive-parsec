@@ -60,6 +60,7 @@ many ma = ((:) <$> ma <*> many ma) `orElse` return []
 many1 :: Parser i c -> Parser i [c]
 many1 ma = (:) <$> ma <*> many ma
 
+choice :: [Parser i a] -> Parser i a
 choice = foldl1 orElse
 
 sepBy1 x sep = (:) <$> x <*> many (sep *> x)
