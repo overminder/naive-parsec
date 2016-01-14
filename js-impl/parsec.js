@@ -5,7 +5,7 @@
 
 'use strict'
 
-require('babel-polyfill')
+import 'babel-polyfill'
 
 // Just a marker.
 class NoneType {
@@ -49,7 +49,7 @@ StringSlice.prototype.tail = function() {
 
 // Monadic parsers
 
-function one(p) {
+export function one(p) {
   return function* (xs) {
     let x
     if ((x = xs.head()) !== None) {
@@ -72,13 +72,26 @@ function oneOf(s) {
   return one((c) => s.indexOf(c) != -1)
 }
 
+const named = (name, p) => fmap((a) => ({[name]: a}), p)
+
+function foldlM(combine, init, ps) {
+  ps.forEach((p) => {
+    init = fmap(([a, b]) => combine(a, b), andThen(init, p))
+  })
+  return init
+}
+
+const combineNamed = (...ps) => foldlM((a, b) => Object.assign(a, b), pure({}), ps)
+
+const sequentiallyNamed = (kw) => combineNamed(...Object.keys(kw).map((k) => named(k, kw[k])))
+
 const letter = one((c) => ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z'))
 const digit = one((c) => '0' <= c && c <= '9')
 
 const char = (c0) => one((c) => c == c0)
 
 // *> :: m a -> m b -> m b
-function starRight(p1, p2) {
+function ignoreFirst(p1, p2) {
   return function* (xs) {
     for (let [_, xs0] of p1(xs)) {
       yield* p2(xs0)
@@ -92,11 +105,11 @@ function string(s) {
   for (var i = 0; i < s.length; ++i) {
       p = andThen(p, char(s[i]))
   }
-  return starRight(p, pure(s))
+  return ignoreFirst(p, pure(s))
 }
 
 // (>>=) :: m a -> (a -> m b) -> m b
-function andThen(p1, p2) {
+export function andThen(p1, p2) {
   return function* (xs) {
     for (let [a1, xs0] of p1(xs)) {
       for (let [a2, xs1] of p2(xs0)) {
@@ -107,7 +120,7 @@ function andThen(p1, p2) {
 }
 
 // (<|>) :: m a -> m a -> m a
-function orElse(p1, p2) {
+export function orElse(p1, p2) {
   return function* (xs) {
     yield* p1(xs)
     yield* p2(xs)
@@ -115,7 +128,7 @@ function orElse(p1, p2) {
 }
 
 // pure :: a -> m a
-function pure(x) {
+export function pure(x) {
   return function* (xs) {
     yield [x, xs]
   }
@@ -139,22 +152,22 @@ function many1(p) {
   }
 }
 
-function many(p) {
+export function many(p) {
   return orElse(many1(p), pure([]))
 }
 
 // sepBy1 :: m a -> m b -> m [a]
-function sepBy1(p, sep) {
+export function sepBy1(p, sep) {
   return function* (xs) {
     for (let [a0, xs0] of p(xs)) {
-      for (let [a1, xs1] of many1(starRight(sep, p))(xs0)) {
+      for (let [a1, xs1] of many1(ignoreFirst(sep, p))(xs0)) {
         yield [arrayCons(a0, a1), xs1]
       }
     }
   }
 }
 
-function sepBy(p, sep) {
+export function sepBy(p, sep) {
   return orElse(sepBy1(p, sep), pure([]))
 }
 
@@ -166,31 +179,30 @@ function joinChars(cs) {
 const joinCharsM = (ma) => fmap(joinChars, ma)
 
 // parse :: m a -> String -> Maybe a
-function parse(p, xs) {
+export function parse(p, xs) {
   for (let [a, _] of p(new StringSlice(xs))) {
     return a
   }
   return None
 }
 
-const pUrl = function* (xs) {
+const pUrl = (() => {
   let pScheme = joinCharsM(many1(letter))
   let pChar = orElse(letter, orElse(digit, oneOf('.-_')))
   let pChars = joinCharsM(many1(pChar))
-  let pPathSeg = starRight(char('/'), joinCharsM(many1(pChar)))
-  let pQuery = andThen(pChars, starRight(char('='), pChars))
+  let pPathSeg = ignoreFirst(char('/'), joinCharsM(many1(pChar)))
+  let pQuery = andThen(pChars, ignoreFirst(char('='), pChars))
   let pQueries = sepBy(pQuery, char('&'))
 
-  for (let [scheme, xs0] of pScheme(xs)) {
-    for (let [hostname, xs1] of starRight(string('://'), pChars)(xs0)) {
-      for (let [pathSegs, xs2] of many(pPathSeg)(xs1)) {
-        for (let [queries, xs3] of orElse(starRight(char('?'), pQueries), pure([]))(xs2)) {
-          yield [{ scheme, hostname, pathSegs, queries }, xs2]
-        }
-      }
-    }
-  }
-}
+  // XXX: This relies on the fact that modern JS engines preserve the key
+  // insertion order. combineNamed(named(..)..) is safer in this regard.
+  return sequentiallyNamed({
+    scheme: pScheme,
+    hostname: ignoreFirst(string('://'), pChars),
+    pathSegs: many(pPathSeg),
+    queries: orElse(ignoreFirst(char('?'), pQueries), pure([]))
+  })
+})()
 
 
 const pA = char('a')
@@ -207,11 +219,5 @@ $ node parsec-compiled.js
   queries: [ [ 'a', '5' ], [ 'b', '3' ] ] }
  */
 
-//console.log(parse(sepBy1(many1(pA), char(',')), 'aa,a,aaa'))
-
-module.exports = {
-  one,
-  andThen,
-  parse,
-}
+//console.log(parse(andThen(named('a', many1(pA)), named('b', many1(pB))), 'aabbb'))
 
