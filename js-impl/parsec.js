@@ -111,7 +111,7 @@ function string(s) {
   return ignoreFirst(p, pure(s))
 }
 
-// (>>=) :: m a -> (a -> m b) -> m b
+// andThen :: m a -> m b -> m (a, b)
 export function andThen(p1, p2) {
   return function* (xs) {
     for (let [a1, xs0] of p1(xs)) {

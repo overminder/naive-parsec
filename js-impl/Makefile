@@ -1,4 +1,4 @@
-OUT := parsec-compiled.js
+OUT := parsec-cps-compiled.js
 BABEL := node_modules/.bin/babel
 
 all : run
